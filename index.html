@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Neon Rush 3D</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#050510;color:white;font-family:Arial,sans-serif;touch-action:none}
+canvas{display:block}
+#hud{position:fixed;top:12px;left:12px;font-size:17px;line-height:1.8;font-weight:bold;text-shadow:0 0 10px #00eaff;z-index:2}
+#screen{position:fixed;inset:0;background:#050510dd;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;z-index:5;padding:20px}
+h1{font-size:clamp(35px,9vw,65px);color:#00f5ff;text-shadow:0 0 20px #008cff;margin:0 0 12px}
+button{font-size:19px;font-weight:bold;color:white;background:#101c3d;border:2px solid #00eaff;border-radius:12px;padding:12px;touch-action:none}
+#start{margin-top:20px;padding:14px 28px}
+#controls{position:fixed;bottom:15px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:end;z-index:3}
+.pad{display:grid;grid-template-columns:52px 52px 52px;grid-template-rows:48px 48px;gap:4px}
+.pad button{padding:4px;opacity:.85}
+#up{grid-column:2;grid-row:1}
+#left{grid-column:1;grid-row:2}
+#down{grid-column:2;grid-row:2}
+#right{grid-column:3;grid-row:2}
+#jump{height:55px}
+small{line-height:1.8;color:#d3e7ff}
+</style>
+</head>
+<body>
+
+<div id="hud">
+<div>Distance: <span id="dist">0</span></div>
+<div>Gems: <span id="coins">0</span></div>
+<div>Speed: <span id="spd">1</span></div>
+</div>
+
+<div id="screen">
+<h1>NEON RUSH 3D</h1>
+<p id="desc">Dodge obstacles and collect gems!</p>
+<small>Computer: Arrow keys or WASD<br>Mobile: Use the on-screen controls<br>Space or Jump button to jump</small>
+<button id="start">START GAME</button>
+</div>
+
+<div id="controls">
+<div class="pad">
+<button id="up">UP</button>
+<button id="left">LEFT</button>
+<button id="down">DOWN</button>
+<button id="right">RIGHT</button>
+</div>
+<button id="jump">JUMP</button>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050510);
+scene.fog = new THREE.Fog(0x050510, 25, 110);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 250);
+camera.position.set(0, 5, 9);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0x88ccff, 0x220033, 2));
+
+const light = new THREE.PointLight(0x00eaff, 40, 50);
+light.position.set(0, 8, 0);
+scene.add(light);
+
+const cyan = new THREE.MeshBasicMaterial({color:0x00eaff});
+const pink = new THREE.MeshBasicMaterial({color:0xff00cc});
+const floorMat = new THREE.MeshStandardMaterial({
+  color:0x10152e, metalness:0.5, roughness:0.3
+});
+
+const ball = new THREE.Mesh(
+  new THREE.SphereGeometry(0.48, 32, 24),
+  new THREE.MeshStandardMaterial({
+    color:0x00eaff,
+    emissive:0x0066ff,
+    emissiveIntensity:1.5,
+    metalness:0.4,
+    roughness:0.2
+  })
+);
+ball.position.set(0, 0.5, 0);
+scene.add(ball);
+
+const ballLight = new THREE.PointLight(0x00eaff, 3, 8);
+scene.add(ballLight);
+
+const segments = [];
+const segmentLength = 18;
+
+for(let i=0; i<9; i++){
+  const g = new THREE.Group();
+
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(9, 0.35, segmentLength), floorMat
+  );
+  floor.position.y = -0.35;
+  g.add(floor);
+
+  for(const x of [-4.48, 4.48]){
+    const edge = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.08, segmentLength), cyan
+    );
+    edge.position.set(x, -0.12, 0);
+    g.add(edge);
+  }
+
+  for(const x of [-2.8, 0, 2.8]){
+    const line = new THREE.Mesh(
+      new THREE.BoxGeometry(0.025, 0.02, segmentLength), pink
+    );
+    line.position.set(x, -0.15, 0);
+    g.add(line);
+  }
+
+  g.position.z = -i * segmentLength;
+  scene.add(g);
+  segments.push(g);
+}
+
+const starPositions = [];
+for(let i=0; i<450; i++){
+  starPositions.push(
+    (Math.random()-0.5)*100,
+    Math.random()*45,
+    -Math.random()*180
+  );
+}
+const starGeometry = new THREE.BufferGeometry();
+starGeometry.setAttribute(
+  'position',
+  new THREE.Float32BufferAttribute(starPositions, 3)
+);
+const stars = new THREE.Points(
+  starGeometry,
+  new THREE.PointsMaterial({color:0x9cafff, size:0.12})
+);
+scene.add(stars);
+
+const obstacleMat = new THREE.MeshStandardMaterial({
+  color:0xff1744,
+  emissive:0xaa001d,
+  emissiveIntensity:1
+});
+const gemMat = new THREE.MeshStandardMaterial({
+  color:0xffe44d,
+  emissive:0xffaa00,
+  emissiveIntensity:1.5,
+  metalness:0.4,
+  roughness:0.2
+});
+
+let obstacles = [];
+let gems = [];
+
+function addObstacle(z){
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 1.1, 1), obstacleMat
+  );
+  mesh.position.set(Math.random()*5.8-2.9, 0.55, z);
+  scene.add(mesh);
+  obstacles.push(mesh);
+}
+
+function addGem(z){
+  const mesh = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.38), gemMat
+  );
+  mesh.position.set(Math.random()*5-2.5, 1, z);
+  scene.add(mesh);
+  gems.push(mesh);
+}
+
+function createItems(){
+  obstacles.forEach(o => scene.remove(o));
+  gems.forEach(g => scene.remove(g));
+  obstacles = [];
+  gems = [];
+
+  for(let z=-18; z>-850; z-=12+Math.random()*9){
+    if(Math.random()<0.78) addObstacle(z);
+    if(Math.random()<0.65) addGem(z-4);
+  }
+}
+
+let running = false;
+let x = 0;
+let z = 0;
+let speed = 0.22;
+let jumpY = 0;
+let jumpV = 0;
+let coins = 0;
+let distance = 0;
+
+const keys = {};
+
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)){
+    e.preventDefault();
+  }
+
+  if(k === ' ') jump();
+});
+
+window.addEventListener('keyup', e => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+function bindButton(id, k){
+  const b = document.getElementById(id);
+
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    keys[k] = true;
+    b.setPointerCapture(e.pointerId);
+  });
+
+  for(const ev of ['pointerup','pointercancel','lostpointercapture']){
+    b.addEventListener(ev, () => keys[k] = false);
+  }
+}
+
+bindButton('left', 'arrowleft');
+bindButton('right', 'arrowright');
+bindButton('up', 'arrowup');
+bindButton('down', 'arrowdown');
+
+document.getElementById('jump').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  jump();
+});
+
+function jump(){
+  if(running && jumpY === 0){
+    jumpV = 0.19;
+  }
+}
+
+function endGame(){
+  running = false;
+  document.getElementById('screen').style.display = 'flex';
+  document.querySelector('#screen h1').textContent = 'GAME OVER';
+  document.getElementById('desc').textContent =
+    'Distance: ' + Math.floor(distance) + ' | Gems: ' + coins;
+  document.getElementById('start').textContent = 'PLAY AGAIN';
+}
+
+function startGame(){
+  x = 0;
+  z = 0;
+  speed = 0.22;
+  jumpY = 0;
+  jumpV = 0;
+  coins = 0;
+  distance = 0;
+
+  ball.position.set(0, 0.5, 0);
+  segments.forEach((s, i) => {
+    s.position.z = -i * segmentLength;
+  });
+
+  createItems();
+
+  document.getElementById('dist').textContent = '0';
+  document.getElementById('coins').textContent = '0';
+  document.getElementById('spd').textContent = '1';
+  document.getElementById('screen').style.display = 'none';
+  running = true;
+}
+
+document.getElementById('start').addEventListener('click', startGame);
+
+const clock = new THREE.Clock();
+
+function animate(){
+  requestAnimationFrame(animate);
+
+  const dt = Math.min(clock.getDelta(), 0.04);
+  const step = dt * 60;
+
+  if(running){
+    speed = Math.min(0.22 + distance*0.00035, 0.65);
+    distance += speed * step * 2;
+    z -= speed * step;
+
+    if(keys.arrowleft || keys.a) x -= 0.12*step;
+    if(keys.arrowright || keys.d) x += 0.12*step;
+    if(keys.arrowup || keys.w) z -= 0.08*step;
+    if(keys.arrowdown || keys.s) z += 0.08*step;
+
+    x = THREE.MathUtils.clamp(x, -3.8, 3.8);
+    z = Math.min(z, 1);
+
+    if(jumpV !== 0 || jumpY > 0){
+      jumpY += jumpV * step;
+      jumpV -= 0.012 * step;
+
+      if(jumpY <= 0){
+        jumpY = 0;
+        jumpV = 0;
+      }
+    }
+
+    ball.position.set(x, 0.5+jumpY, 0);
+    ball.rotation.x -= speed*step*1.8;
+    ball.rotation.z -= x*0.008*step;
+    ballLight.position.copy(ball.position);
+
+    for(const s of segments){
+      s.position.z += speed*step;
+      if(s.position.z > segmentLength){
+        s.position.z -= segments.length*segmentLength;
+      }
+    }
+
+    for(const o of obstacles){
+      o.position.z += speed*step;
+      o.rotation.y += 0.015*step;
+
+      if(
+        Math.abs(o.position.z)<0.75 &&
+        Math.abs(o.position.x-x)<0.8 &&
+        jumpY<0.75
+      ){
+        endGame();
+        break;
+      }
+    }
+
+    for(let i=gems.length-1; i>=0; i--){
+      const g = gems[i];
+      g.position.z += speed*step;
+      g.rotation.y += 0.06*step;
+      g.rotation.x += 0.02*step;
+
+      if(
+        Math.abs(g.position.z)<1 &&
+        Math.abs(g.position.x-x)<0.85
+      ){
+        scene.remove(g);
+        gems.splice(i, 1);
+        coins++;
+      }else if(g.position.z > 10){
+        scene.remove(g);
+        gems.splice(i, 1);
+      }
+    }
+
+    for(let i=obstacles.length-1; i>=0; i--){
+      if(obstacles[i].position.z > 12){
+        scene.remove(obstacles[i]);
+        obstacles.splice(i, 1);
+      }
+    }
+
+    if(distance > 1600) endGame();
+
+    document.getElementById('dist').textContent = Math.floor(distance);
+    document.getElementById('coins').textContent = coins;
+    document.getElementById('spd').textContent = (speed/0.22).toFixed(1);
+  }
+
+  camera.position.x += (x*0.3-camera.position.x)*0.06;
+  camera.position.y += (5+jumpY*0.25-camera.position.y)*0.06;
+  camera.lookAt(x*0.25, 0.4+jumpY*0.3, -5);
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+
+</body>
+  </html>
